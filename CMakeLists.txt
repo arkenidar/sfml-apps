@@ -17,6 +17,7 @@ endif()
 #
 # If CMake can't find it, point at your install:
 #   -DSFML_DIR=<prefix>/lib/cmake/SFML   (or add <prefix> to CMAKE_PREFIX_PATH)
+set(SFML_STATIC_LIBRARIES ON)
 find_package(SFML 3 REQUIRED COMPONENTS Graphics)
 
 # Each app lives under apps/<name>/ and is added here.
