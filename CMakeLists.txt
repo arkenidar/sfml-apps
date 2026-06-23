@@ -9,21 +9,15 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-# SFML is not assumed to be installed: fetch and build SFML 3 from source.
-include(FetchContent)
-FetchContent_Declare(SFML
-  GIT_REPOSITORY https://github.com/SFML/SFML.git
-  GIT_TAG 3.0.0
-  GIT_SHALLOW ON
-  SYSTEM)
-
-# The maze only needs graphics/window/system.
-set(SFML_BUILD_AUDIO OFF CACHE BOOL "" FORCE)
-set(SFML_BUILD_NETWORK OFF CACHE BOOL "" FORCE)
-set(SFML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(SFML_BUILD_DOC OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(SFML)
+# Use an installed SFML 3 via its CMake config package -- no download, no
+# source build. Requesting version 3 rejects a system SFML 2.x (which would
+# otherwise fail to compile the SFML 3 sources). SFML::Graphics pulls Window +
+# System transitively and, unlike pkg-config, carries OpenGL/FreeType and the
+# static-vs-shared link interface correctly.
+#
+# If CMake can't find it, point at your install:
+#   -DSFML_DIR=<prefix>/lib/cmake/SFML   (or add <prefix> to CMAKE_PREFIX_PATH)
+find_package(SFML 3 REQUIRED COMPONENTS Graphics)
 
 # Each app lives under apps/<name>/ and is added here.
 add_subdirectory(apps/maze)
