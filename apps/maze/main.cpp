@@ -146,6 +146,10 @@ public:
     void run() {
         while (window_.isOpen()) {
             handle_events();
+            // Apply a held pointer every frame so dragging across adjacent tiles
+            // keeps walking the player along, like holding the mouse button.
+            if (pointer_down_)
+                handle_click(pointer_pos_);
             render();
         }
     }
@@ -225,10 +229,20 @@ private:
             } else if (const auto* mb =
                            event->getIf<sf::Event::MouseButtonPressed>()) {
                 if (mb->button == sf::Mouse::Button::Left)
-                    handle_click(mb->position);
-            } else if (const auto* touch =
-                           event->getIf<sf::Event::TouchBegan>()) {
-                handle_click(touch->position);
+                    press_pointer(mb->position);
+            } else if (const auto* mb =
+                           event->getIf<sf::Event::MouseButtonReleased>()) {
+                if (mb->button == sf::Mouse::Button::Left)
+                    pointer_down_ = false;
+            } else if (const auto* mm =
+                           event->getIf<sf::Event::MouseMoved>()) {
+                pointer_pos_ = mm->position;
+            } else if (const auto* t = event->getIf<sf::Event::TouchBegan>()) {
+                if (t->finger == 0) press_pointer(t->position);
+            } else if (const auto* t = event->getIf<sf::Event::TouchMoved>()) {
+                if (t->finger == 0) pointer_pos_ = t->position;
+            } else if (const auto* t = event->getIf<sf::Event::TouchEnded>()) {
+                if (t->finger == 0) pointer_down_ = false;
             }
         }
 #else
@@ -244,16 +258,38 @@ private:
                 handle_key(event.key.code);
             } else if (event.type == sf::Event::MouseButtonPressed) {
                 if (event.mouseButton.button == sf::Mouse::Button::Left)
-                    handle_click({event.mouseButton.x, event.mouseButton.y});
+                    press_pointer({event.mouseButton.x, event.mouseButton.y});
+            } else if (event.type == sf::Event::MouseButtonReleased) {
+                if (event.mouseButton.button == sf::Mouse::Button::Left)
+                    pointer_down_ = false;
+            } else if (event.type == sf::Event::MouseMoved) {
+                pointer_pos_ = {event.mouseMove.x, event.mouseMove.y};
             } else if (event.type == sf::Event::TouchBegan) {
-                handle_click({event.touch.x, event.touch.y});
+                if (event.touch.finger == 0)
+                    press_pointer({event.touch.x, event.touch.y});
+            } else if (event.type == sf::Event::TouchMoved) {
+                if (event.touch.finger == 0)
+                    pointer_pos_ = {event.touch.x, event.touch.y};
+            } else if (event.type == sf::Event::TouchEnded) {
+                if (event.touch.finger == 0)
+                    pointer_down_ = false;
             }
         }
 #endif
     }
 
-    // A tap/click at a window pixel moves the player onto that tile if it is
+    // Begin a pointer hold (mouse-button-down or first finger touch). The held
+    // pointer is applied each frame in run(), so a press also produces the first
+    // step and dragging across adjacent tiles keeps the player walking.
+    void press_pointer(sf::Vector2i pixel) {
+        pointer_down_ = true;
+        pointer_pos_ = pixel;
+    }
+
+    // Move the player onto the tile under the given window pixel if it is
     // orthogonally adjacent. mapPixelToCoords accounts for the letterboxed view.
+    // After a step the pointer sits over the player's new tile (not adjacent),
+    // so a stationary hold advances at most one tile until the pointer moves on.
     void handle_click(sf::Vector2i pixel) {
         const sf::Vector2f m = window_.mapPixelToCoords(pixel);
         const int x = static_cast<int>(m.x / kTileSize);
@@ -285,6 +321,8 @@ private:
     std::size_t world_ = static_cast<std::size_t>(-1);
     Map map_;
     sf::Vector2i player_{0, 0};
+    bool pointer_down_ = false;        // left button / first finger held down
+    sf::Vector2i pointer_pos_{0, 0};   // its latest window-pixel position
 };
 
 }  // namespace
