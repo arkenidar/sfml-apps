@@ -12,6 +12,7 @@
 
 #include <SFML/Graphics.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdio>
@@ -124,6 +125,17 @@ sf::FloatRect make_rect(float left, float top, float width, float height) {
 #endif
 }
 
+// Resolution of the primary display. SFML 3 moved width/height into a size
+// vector, so normalise the access here.
+sf::Vector2u desktop_size() {
+    const sf::VideoMode mode = sf::VideoMode::getDesktopMode();
+#if SFML_VERSION_MAJOR >= 3
+    return mode.size;
+#else
+    return {mode.width, mode.height};
+#endif
+}
+
 class Game {
 public:
     Game()
@@ -141,6 +153,7 @@ public:
                 throw std::runtime_error("texture not found: " +
                                          std::string(files[i]));
         load_next_world();
+        fit_window();
     }
 
     void run() {
@@ -160,6 +173,29 @@ private:
         map_ = Map(asset_path(worlds_[world_]));
         player_ = map_.player();
         update_view();  // map dimensions changed; refit the view
+    }
+
+    // Enlarge and centre the window for honest desktop windows (Termux:X11,
+    // Debian), where the default 400x300 is tiny on a phone screen and gets
+    // tucked under the Android status bar. Skipped on a fullscreen/native
+    // surface (CxxDroid), detected by the window already filling the display.
+    void fit_window() {
+        const sf::Vector2u desk = desktop_size();
+        const sf::Vector2u cur = window_.getSize();
+        if (desk.x == 0 || desk.y == 0 || cur.x >= desk.x * 9 / 10)
+            return;  // unknown size, or already (near) fullscreen: leave it
+
+        const float map_w = map_.width() * kTileSize;
+        const float map_h = map_.height() * kTileSize;
+        // Scale the maze up to ~80% of the display, never below native size.
+        const float scale = std::max(
+            1.f, std::min(desk.x * 0.8f / map_w, desk.y * 0.8f / map_h));
+        const unsigned win_w = static_cast<unsigned>(map_w * scale);
+        const unsigned win_h = static_cast<unsigned>(map_h * scale);
+        window_.setSize({win_w, win_h});
+        window_.setPosition({static_cast<int>((desk.x - win_w) / 2),
+                             static_cast<int>((desk.y - win_h) / 2)});
+        update_view();
     }
 
     // Fit the current map into the window preserving its aspect ratio. The
