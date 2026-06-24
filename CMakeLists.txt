@@ -28,11 +28,20 @@ find_library(SFML_GRAPHICS_STATIC
 if(SFML_GRAPHICS_STATIC)
   message(STATUS "Static SFML found: ${SFML_GRAPHICS_STATIC}")
   set(SFML_STATIC_LIBRARIES ON)
+  # Point Config mode at the SFML package next to the archive we just found.
+  get_filename_component(_sfml_libdir "${SFML_GRAPHICS_STATIC}" DIRECTORY)
+  if(NOT SFML_DIR AND EXISTS "${_sfml_libdir}/cmake/SFML")
+    set(SFML_DIR "${_sfml_libdir}/cmake/SFML")
+  endif()
 else()
   message(STATUS "Static SFML not found; using shared libraries")
   set(SFML_STATIC_LIBRARIES OFF)
 endif()
-find_package(SFML 3 REQUIRED COMPONENTS Graphics)
+
+# CONFIG forces use of SFML 3's SFMLConfig.cmake and bypasses CMake's bundled
+# legacy FindSFML.cmake module (written for SFML 2.x), which does not recognise
+# the SFML 3 'Graphics' component target and fails configure.
+find_package(SFML 3 REQUIRED COMPONENTS Graphics CONFIG)
 
 # Each app lives under apps/<name>/ and is added here.
 add_subdirectory(apps/maze)
