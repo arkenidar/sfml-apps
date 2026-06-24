@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
+# Tell the CxxDroid IDE which built ELF to launch (it otherwise can't pick one
+# among the project's outputs). Harmless comment on every other toolchain.
+#Cxxdroid-binary: maze
+
 project(sfml-apps CXX)
 
 set(CMAKE_CXX_STANDARD 17)
