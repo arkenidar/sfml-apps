@@ -1,9 +1,11 @@
 // maze: a tile-based maze rendered from BMP images.
 //
-// C++/SFML 3 port of the original SDL3 program (see ../../maze.c). Behavior is
-// kept the same: arrow keys / clicks on adjacent tiles move the player around a
-// map loaded from a text file; walls block movement; stepping on the exit
-// advances to the next map (wrapping back to the first after the last).
+// C++/SFML port of the original SDL3 program (see ../../maze.c). Builds against
+// both SFML 2.x (Termux, CxxDroid) and SFML 3.x (Debian); the few places where
+// the APIs diverge are guarded by SFML_VERSION_MAJOR. Behavior is kept the
+// same: arrow keys / clicks on adjacent tiles move the player around a map
+// loaded from a text file; walls block movement; stepping on the exit advances
+// to the next map (wrapping back to the first after the last).
 //
 // Needs an assets/ directory containing P.bmp, -.bmp, W.bmp, E.bmp and
 // map01.txt..map03.txt next to (or one/two levels above) the executable.
@@ -110,12 +112,17 @@ Tile tile_of(char c) {
 class Game {
 public:
     Game()
+#if SFML_VERSION_MAJOR >= 3
         : window_(sf::VideoMode({400u, 300u}), "mini-maze with SFML",
                   sf::Style::Default) {
+#else
+        : window_(sf::VideoMode(400, 300), "mini-maze with SFML",
+                  sf::Style::Default) {
+#endif
         constexpr std::array<std::string_view, 4> files = {
             "assets/P.bmp", "assets/-.bmp", "assets/W.bmp", "assets/E.bmp"};
         for (std::size_t i = 0; i < files.size(); ++i)
-            if (!textures_[i].loadFromFile(asset_path(files[i])))
+            if (!textures_[i].loadFromFile(asset_path(files[i]).string()))
                 throw std::runtime_error("texture not found: " +
                                          std::string(files[i]));
         load_next_world();
@@ -149,22 +156,42 @@ private:
             load_next_world();
     }
 
+    // Act on a key press. Key enumerators are spelled fully qualified
+    // (sf::Keyboard::Key::X), which is valid for both SFML 2's unscoped enum
+    // and SFML 3's scoped enum class.
+    void handle_key(sf::Keyboard::Key code) {
+        switch (code) {
+            case sf::Keyboard::Key::Escape: window_.close(); break;
+            case sf::Keyboard::Key::Up:     try_move(player_.x, player_.y - 1); break;
+            case sf::Keyboard::Key::Down:   try_move(player_.x, player_.y + 1); break;
+            case sf::Keyboard::Key::Left:   try_move(player_.x - 1, player_.y); break;
+            case sf::Keyboard::Key::Right:  try_move(player_.x + 1, player_.y); break;
+            default: break;
+        }
+    }
+
     void handle_events() {
+#if SFML_VERSION_MAJOR >= 3
+        // SFML 3: pollEvent() returns std::optional<sf::Event>; event kinds are
+        // queried with is<>()/getIf<>().
         while (const std::optional event = window_.pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
                 window_.close();
             } else if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
-                using Key = sf::Keyboard::Key;
-                switch (key->code) {
-                    case Key::Escape: window_.close(); break;
-                    case Key::Up:     try_move(player_.x, player_.y - 1); break;
-                    case Key::Down:   try_move(player_.x, player_.y + 1); break;
-                    case Key::Left:   try_move(player_.x - 1, player_.y); break;
-                    case Key::Right:  try_move(player_.x + 1, player_.y); break;
-                    default: break;
-                }
+                handle_key(key->code);
             }
         }
+#else
+        // SFML 2: pollEvent(out) fills an sf::Event tagged by its .type field.
+        sf::Event event;
+        while (window_.pollEvent(event)) {
+            if (event.type == sf::Event::Closed) {
+                window_.close();
+            } else if (event.type == sf::Event::KeyPressed) {
+                handle_key(event.key.code);
+            }
+        }
+#endif
     }
 
     // Clicking an orthogonally adjacent tile moves the player onto it.

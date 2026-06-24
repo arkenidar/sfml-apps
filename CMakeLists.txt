@@ -9,39 +9,51 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-# Use an installed SFML 3 via its CMake config package -- no download, no
-# source build. Requesting version 3 rejects a system SFML 2.x (which would
-# otherwise fail to compile the SFML 3 sources). SFML::Graphics pulls Window +
-# System transitively and, unlike pkg-config, carries OpenGL/FreeType and the
-# static-vs-shared link interface correctly.
+# SFML is discovered in tiers because its version and packaging differ per
+# environment: Debian ships SFML 3 (CMake config package, target SFML::Graphics),
+# while Termux and CxxDroid ship SFML 2.x (non-namespaced targets sfml-graphics,
+# or pkg-config only). Whichever is found is normalised onto the interface
+# target `sfml` that the apps link against, so per-app CMake stays uniform.
 #
 # If CMake can't find it, point at your install:
 #   -DSFML_DIR=<prefix>/lib/cmake/SFML   (or add <prefix> to CMAKE_PREFIX_PATH)
-#
-# Prefer the static libraries, but fall back to the shared ones when a static
-# SFML build isn't installed. SFML's config package reports SFML_FOUND even for
-# a shared-only install, so we probe for the actual static archive on disk
-# (e.g. libsfml-graphics-s.a) and only request static linking if it exists.
+add_library(sfml INTERFACE)
+
+# Prefer static SFML when its archive is on disk (e.g. CxxDroid, whose package
+# is static-only). The probe only matches the static naming (libsfml-graphics-s),
+# so a shared-only install leaves SFML_STATIC_LIBRARIES off.
 find_library(SFML_GRAPHICS_STATIC
   NAMES sfml-graphics-s sfml-graphics-s-d
   PATH_SUFFIXES lib)
 if(SFML_GRAPHICS_STATIC)
   message(STATUS "Static SFML found: ${SFML_GRAPHICS_STATIC}")
   set(SFML_STATIC_LIBRARIES ON)
-  # Point Config mode at the SFML package next to the archive we just found.
-  get_filename_component(_sfml_libdir "${SFML_GRAPHICS_STATIC}" DIRECTORY)
-  if(NOT SFML_DIR AND EXISTS "${_sfml_libdir}/cmake/SFML")
-    set(SFML_DIR "${_sfml_libdir}/cmake/SFML")
-  endif()
 else()
-  message(STATUS "Static SFML not found; using shared libraries")
   set(SFML_STATIC_LIBRARIES OFF)
 endif()
 
-# CONFIG forces use of SFML 3's SFMLConfig.cmake and bypasses CMake's bundled
-# legacy FindSFML.cmake module (written for SFML 2.x), which does not recognise
-# the SFML 3 'Graphics' component target and fails configure.
-find_package(SFML 3 REQUIRED COMPONENTS Graphics CONFIG)
+# Tier 1: SFML 3 config package (Debian). CONFIG bypasses CMake's legacy
+# FindSFML.cmake module so the SFML 3 'Graphics' component resolves.
+find_package(SFML 3 QUIET COMPONENTS Graphics CONFIG)
+if(TARGET SFML::Graphics)
+  message(STATUS "Using SFML 3 via CMake config package")
+  target_link_libraries(sfml INTERFACE SFML::Graphics)
+else()
+  # Tier 2: SFML 2 finder. Components must be lowercase; the finder (CxxDroid's
+  # FindSFML.cmake, or a 2.x config package) creates non-namespaced targets and
+  # sfml-graphics pulls window+system and all native deps transitively.
+  find_package(SFML 2 QUIET COMPONENTS graphics window system)
+  if(TARGET sfml-graphics)
+    message(STATUS "Using SFML 2 via CMake finder")
+    target_link_libraries(sfml INTERFACE sfml-graphics sfml-window sfml-system)
+  else()
+    # Tier 3: pkg-config (Termux ships sfml-graphics.pc but no CMake package).
+    message(STATUS "SFML CMake package not found; trying pkg-config")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SFML2 REQUIRED IMPORTED_TARGET sfml-graphics)
+    target_link_libraries(sfml INTERFACE PkgConfig::SFML2)
+  endif()
+endif()
 
 # Each app lives under apps/<name>/ and is added here.
 add_subdirectory(apps/maze)
