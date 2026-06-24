@@ -44,15 +44,20 @@ fs::path executable_dir() {
     return fs::current_path();
 }
 
-// Resolve a relative asset path against the executable's directory, searching
-// next to the executable, then one and two levels up.
+// Resolve a relative asset path by searching next to the executable, then one
+// and two levels up, and likewise relative to the current working directory.
+// The cwd bases matter on CxxDroid: it copies the binary out of (noexec)
+// storage to launch it, so the executable's directory no longer holds the
+// assets, but the working directory still points at the project.
 fs::path asset_path(std::string_view relative) {
-    const fs::path base = executable_dir();
-    for (std::string_view prefix : {"", "../", "../../"}) {
-        fs::path candidate = base / (std::string(prefix) + std::string(relative));
-        if (fs::exists(candidate))
-            return candidate;
-    }
+    const fs::path bases[] = {executable_dir(), fs::current_path()};
+    for (const fs::path& base : bases)
+        for (std::string_view prefix : {"", "../", "../../"}) {
+            fs::path candidate =
+                base / (std::string(prefix) + std::string(relative));
+            if (fs::exists(candidate))
+                return candidate;
+        }
     return relative;
 }
 
