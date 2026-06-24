@@ -141,8 +141,6 @@ public:
             if (!textures_[i].loadFromFile(asset_path(files[i]).string()))
                 throw std::runtime_error("texture not found: " +
                                          std::string(files[i]));
-        const sf::Vector2u sz = window_.getSize();
-        std::fprintf(stderr, "maze: window %ux%u\n", sz.x, sz.y);
         load_next_world();
     }
 
