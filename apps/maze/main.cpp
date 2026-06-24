@@ -126,25 +126,23 @@ sf::FloatRect make_rect(float left, float top, float width, float height) {
 
 class Game {
 public:
-    // Fullscreen at the display's resolution: the only reliable way to fill the
-    // screen on Termux:X11 (which runs without a window manager, so a windowed
-    // size/position isn't honored), it matches CxxDroid's native fullscreen, and
-    // the letterboxed view scales the maze to fit. Press Escape to exit. SFML 3
-    // moved fullscreen out of Style into a separate State enum.
+    // A borderless window the size of the whole display. True fullscreen on X11
+    // relies on window-manager hints, which Termux:X11 lacks (no WM), so the
+    // window wouldn't actually fill the screen; a borderless window sized at
+    // creation does, with no WM and no video-mode switch. It matches CxxDroid's
+    // native fullscreen too, and the letterboxed view scales the maze to fit.
+    // Press Escape to exit.
     Game()
-#if SFML_VERSION_MAJOR >= 3
         : window_(sf::VideoMode::getDesktopMode(), "mini-maze with SFML",
-                  sf::State::Fullscreen) {
-#else
-        : window_(sf::VideoMode::getDesktopMode(), "mini-maze with SFML",
-                  sf::Style::Fullscreen) {
-#endif
+                  sf::Style::None) {
         constexpr std::array<std::string_view, 4> files = {
             "assets/P.bmp", "assets/-.bmp", "assets/W.bmp", "assets/E.bmp"};
         for (std::size_t i = 0; i < files.size(); ++i)
             if (!textures_[i].loadFromFile(asset_path(files[i]).string()))
                 throw std::runtime_error("texture not found: " +
                                          std::string(files[i]));
+        const sf::Vector2u sz = window_.getSize();
+        std::fprintf(stderr, "maze: window %ux%u\n", sz.x, sz.y);
         load_next_world();
     }
 
