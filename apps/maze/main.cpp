@@ -114,6 +114,16 @@ Tile tile_of(char c) {
     }
 }
 
+// Build an sf::FloatRect from (left, top, width, height). SFML 3 reshaped the
+// constructor to take position/size vectors, so wrap the difference here.
+sf::FloatRect make_rect(float left, float top, float width, float height) {
+#if SFML_VERSION_MAJOR >= 3
+    return sf::FloatRect({left, top}, {width, height});
+#else
+    return sf::FloatRect(left, top, width, height);
+#endif
+}
+
 class Game {
 public:
     Game()
@@ -136,7 +146,6 @@ public:
     void run() {
         while (window_.isOpen()) {
             handle_events();
-            handle_mouse();
             render();
         }
     }
@@ -146,6 +155,33 @@ private:
         world_ = (world_ + 1) % worlds_.size();
         map_ = Map(asset_path(worlds_[world_]));
         player_ = map_.player();
+        update_view();  // map dimensions changed; refit the view
+    }
+
+    // Fit the current map into the window preserving its aspect ratio. The
+    // window is fullscreen on Android, so without this the maze is stretched to
+    // the screen; a letterboxed viewport keeps tiles square and also makes
+    // mapPixelToCoords translate touches/clicks back to map coordinates.
+    void update_view() {
+        const sf::Vector2u win = window_.getSize();
+        if (win.x == 0 || win.y == 0)
+            return;
+        const float map_w = map_.width() * kTileSize;
+        const float map_h = map_.height() * kTileSize;
+        sf::View view(make_rect(0.f, 0.f, map_w, map_h));
+
+        const float win_aspect = static_cast<float>(win.x) / win.y;
+        const float map_aspect = map_w / map_h;
+        float vw = 1.f, vh = 1.f, vx = 0.f, vy = 0.f;
+        if (win_aspect > map_aspect) {  // window wider than map: bars left/right
+            vw = map_aspect / win_aspect;
+            vx = (1.f - vw) / 2.f;
+        } else {                         // window taller than map: bars top/bottom
+            vh = win_aspect / map_aspect;
+            vy = (1.f - vh) / 2.f;
+        }
+        view.setViewport(make_rect(vx, vy, vw, vh));
+        window_.setView(view);
     }
 
     // Move onto (x, y) if it is in bounds and not a wall; the exit loads the
@@ -178,33 +214,48 @@ private:
     void handle_events() {
 #if SFML_VERSION_MAJOR >= 3
         // SFML 3: pollEvent() returns std::optional<sf::Event>; event kinds are
-        // queried with is<>()/getIf<>().
+        // queried with is<>()/getIf<>(), and carry typed members (e.g. position).
         while (const std::optional event = window_.pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
                 window_.close();
+            } else if (event->is<sf::Event::Resized>()) {
+                update_view();
             } else if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
                 handle_key(key->code);
+            } else if (const auto* mb =
+                           event->getIf<sf::Event::MouseButtonPressed>()) {
+                if (mb->button == sf::Mouse::Button::Left)
+                    handle_click(mb->position);
+            } else if (const auto* touch =
+                           event->getIf<sf::Event::TouchBegan>()) {
+                handle_click(touch->position);
             }
         }
 #else
-        // SFML 2: pollEvent(out) fills an sf::Event tagged by its .type field.
+        // SFML 2: pollEvent(out) fills an sf::Event tagged by its .type field,
+        // with a union of per-type members (key, mouseButton, touch).
         sf::Event event;
         while (window_.pollEvent(event)) {
             if (event.type == sf::Event::Closed) {
                 window_.close();
+            } else if (event.type == sf::Event::Resized) {
+                update_view();
             } else if (event.type == sf::Event::KeyPressed) {
                 handle_key(event.key.code);
+            } else if (event.type == sf::Event::MouseButtonPressed) {
+                if (event.mouseButton.button == sf::Mouse::Button::Left)
+                    handle_click({event.mouseButton.x, event.mouseButton.y});
+            } else if (event.type == sf::Event::TouchBegan) {
+                handle_click({event.touch.x, event.touch.y});
             }
         }
 #endif
     }
 
-    // Clicking an orthogonally adjacent tile moves the player onto it.
-    void handle_mouse() {
-        if (!sf::Mouse::isButtonPressed(sf::Mouse::Button::Left))
-            return;
-        const sf::Vector2f m =
-            window_.mapPixelToCoords(sf::Mouse::getPosition(window_));
+    // A tap/click at a window pixel moves the player onto that tile if it is
+    // orthogonally adjacent. mapPixelToCoords accounts for the letterboxed view.
+    void handle_click(sf::Vector2i pixel) {
+        const sf::Vector2f m = window_.mapPixelToCoords(pixel);
         const int x = static_cast<int>(m.x / kTileSize);
         const int y = static_cast<int>(m.y / kTileSize);
         const bool adjacent = (std::abs(x - player_.x) == 1 && y == player_.y) ||
